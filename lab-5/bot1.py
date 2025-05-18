@@ -4,7 +4,7 @@ from aiogram import Bot, Dispatcher, types
 from aiogram.filters.command import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
+from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, BotCommand, BotCommandScopeChat
 from aiogram.utils.keyboard import ReplyKeyboardBuilder
 
 # Получаем токен бота и данные для подключения к БД из переменных окружения
@@ -18,7 +18,6 @@ db_password = os.getenv('DB_PASSWORD')
 bot = Bot(token=bot_token)
 dp = Dispatcher()
 
-
 # Определение состояний для FSM
 class CurrencyStates(StatesGroup):
     waiting_for_currency_name = State()
@@ -27,11 +26,9 @@ class CurrencyStates(StatesGroup):
     waiting_for_currency_to_update = State()
     waiting_for_new_rate = State()
 
-
 class ConvertStates(StatesGroup):
     waiting_for_currency_to_convert = State()
     waiting_for_amount_to_convert = State()
-
 
 # Функция для подключения к базе данных
 def get_db_connection():
@@ -46,7 +43,6 @@ def get_db_connection():
     except Exception as e:
         print(f"Ошибка при подключении к PostgreSQL: {e}")
         return None
-
 
 # Функция для создания таблиц (выполняется при старте бота)
 def create_tables():
@@ -76,7 +72,6 @@ def create_tables():
         finally:
             conn.close()
 
-
 # Проверка, является ли пользователь администратором
 def is_admin(chat_id: str) -> bool:
     conn = get_db_connection()
@@ -93,10 +88,32 @@ def is_admin(chat_id: str) -> bool:
             conn.close()
     return False
 
-
 # Обработчик команды /start
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
+    # Устанавливаем соответствующие команды для этого пользователя
+    if is_admin(str(message.chat.id)):
+        admin_commands = [
+            BotCommand(command='/start', description='Начать работу с ботом'),
+            BotCommand(command='/get_currencies', description='Показать курсы валют'),
+            BotCommand(command='/convert', description='Конвертировать валюту'),
+            BotCommand(command='/manage_currency', description='Управление валютами (админ)'),
+        ]
+        await bot.set_my_commands(
+            admin_commands,
+            scope=BotCommandScopeChat(chat_id=message.chat.id)
+        )
+    else:
+        main_menu_commands = [
+            BotCommand(command='/start', description='Начать работу с ботом'),
+            BotCommand(command='/get_currencies', description='Показать курсы валют'),
+            BotCommand(command='/convert', description='Конвертировать валюту'),
+        ]
+        await bot.set_my_commands(
+            main_menu_commands,
+            scope=BotCommandScopeChat(chat_id=message.chat.id)
+        )
+
     await message.answer(
         f"👋 Привет, {message.from_user.first_name}! Я бот для работы с валютами.\n\n"
         "Доступные команды:\n"
@@ -105,16 +122,11 @@ async def cmd_start(message: types.Message):
         "/convert - конвертировать валюту в рубли\n"
     )
 
-    # Добавляем команды для администраторов
     if is_admin(str(message.chat.id)):
         await message.answer(
             "Команды администратора:\n"
-            "/start - меню\n"
             "/manage_currency - управление валютами\n"
-            "/get_currencies - сохраненные валюты\n"
-            "/convert - конвертация валют\n"
         )
-
 
 # Обработчик команды /manage_currency (только для администраторов)
 @dp.message(Command("manage_currency"))
@@ -136,7 +148,6 @@ async def cmd_manage_currency(message: types.Message):
         reply_markup=builder.as_markup(resize_keyboard=True)
     )
 
-
 # Обработчик кнопки "Добавить валюту"
 @dp.message(lambda message: message.text == "Добавить валюту")
 async def add_currency_start(message: types.Message, state: FSMContext):
@@ -145,7 +156,6 @@ async def add_currency_start(message: types.Message, state: FSMContext):
         reply_markup=types.ReplyKeyboardRemove()
     )
     await state.set_state(CurrencyStates.waiting_for_currency_name)
-
 
 # Обработчик ввода названия валюты для добавления
 @dp.message(CurrencyStates.waiting_for_currency_name)
@@ -177,7 +187,6 @@ async def process_currency_name(message: types.Message, state: FSMContext):
         await message.answer("Ошибка подключения к базе данных")
         await state.clear()
 
-
 # Обработчик ввода курса валюты
 @dp.message(CurrencyStates.waiting_for_currency_rate)
 async def process_currency_rate(message: types.Message, state: FSMContext):
@@ -207,7 +216,6 @@ async def process_currency_rate(message: types.Message, state: FSMContext):
     except ValueError:
         await message.answer("Пожалуйста, введите корректное число для курса валюты")
 
-
 # Обработчик кнопки "Удалить валюту"
 @dp.message(lambda message: message.text == "Удалить валюту")
 async def delete_currency_start(message: types.Message, state: FSMContext):
@@ -231,7 +239,6 @@ async def delete_currency_start(message: types.Message, state: FSMContext):
             conn.close()
     else:
         await message.answer("Ошибка подключения к базе данных")
-
 
 # Обработчик ввода названия валюты для удаления
 @dp.message(CurrencyStates.waiting_for_currency_to_delete)
@@ -258,7 +265,6 @@ async def process_currency_to_delete(message: types.Message, state: FSMContext):
 
     await state.clear()
 
-
 # Обработчик кнопки "Изменить курс валюты"
 @dp.message(lambda message: message.text == "Изменить курс валюты")
 async def update_currency_start(message: types.Message, state: FSMContext):
@@ -282,7 +288,6 @@ async def update_currency_start(message: types.Message, state: FSMContext):
             conn.close()
     else:
         await message.answer("Ошибка подключения к базе данных")
-
 
 # Обработчик ввода названия валюты для изменения
 @dp.message(CurrencyStates.waiting_for_currency_to_update)
@@ -313,7 +318,6 @@ async def process_currency_to_update(message: types.Message, state: FSMContext):
         await message.answer("Ошибка подключения к базе данных")
         await state.clear()
 
-
 # Обработчик ввода нового курса валюты
 @dp.message(CurrencyStates.waiting_for_new_rate)
 async def process_new_rate(message: types.Message, state: FSMContext):
@@ -343,7 +347,6 @@ async def process_new_rate(message: types.Message, state: FSMContext):
     except ValueError:
         await message.answer("Пожалуйста, введите корректное число для курса валюты")
 
-
 # Обработчик команды /get_currencies
 @dp.message(Command("get_currencies"))
 async def cmd_get_currencies(message: types.Message):
@@ -365,7 +368,6 @@ async def cmd_get_currencies(message: types.Message):
             conn.close()
     else:
         await message.answer("Ошибка подключения к базе данных")
-
 
 # Обработчик команды /convert
 @dp.message(Command("convert"))
@@ -389,7 +391,6 @@ async def cmd_convert(message: types.Message, state: FSMContext):
             conn.close()
     else:
         await message.answer("Ошибка подключения к базе данных")
-
 
 # Обработчик ввода названия валюты для конвертации
 @dp.message(ConvertStates.waiting_for_currency_to_convert)
@@ -424,7 +425,6 @@ async def process_currency_to_convert(message: types.Message, state: FSMContext)
     else:
         await message.answer("Ошибка подключения к базе данных")
 
-
 # Обработчик ввода суммы для конвертации
 @dp.message(ConvertStates.waiting_for_amount_to_convert)
 async def process_amount_to_convert(message: types.Message, state: FSMContext):
@@ -443,7 +443,6 @@ async def process_amount_to_convert(message: types.Message, state: FSMContext):
     except ValueError:
         await message.answer("Пожалуйста, введите корректное число для суммы.")
 
-
 # Обработчик кнопки "Отмена"
 @dp.message(lambda message: message.text == "Отмена")
 async def cancel_action(message: types.Message, state: FSMContext):
@@ -454,13 +453,50 @@ async def cancel_action(message: types.Message, state: FSMContext):
     )
 
 
-# Запуск бота и создание таблиц
+# Настройка меню команд
+async def set_commands(bot: Bot):
+    # Основные команды для всех пользователей
+    main_menu_commands = [
+        BotCommand(command='/start', description='Начать работу с ботом'),
+        BotCommand(command='/get_currencies', description='Показать курсы валют'),
+        BotCommand(command='/convert', description='Конвертировать валюту'),
+    ]
+
+    # Устанавливаем команды по умолчанию для всех пользователей
+    await bot.set_my_commands(main_menu_commands)
+
+    # Получаем список всех админов из БД
+    conn = get_db_connection()
+    if conn:
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT chat_id FROM admins")
+                admins = cursor.fetchall()
+
+                # Команды для администраторов
+                admin_commands = main_menu_commands + [
+                    BotCommand(command='/manage_currency', description='Управление валютами (админ)'),
+                ]
+
+                # Устанавливаем команды для каждого админа
+                for admin in admins:
+                    chat_id = admin[0]
+                    try:
+                        await bot.set_my_commands(
+                            admin_commands,
+                            scope=BotCommandScopeChat(chat_id=int(chat_id))
+                        )
+                    except Exception as e:
+                        print(f"Ошибка при установке команд для админа {chat_id}: {e}")
+        finally:
+            conn.close()
+
+# Запуск бота
 async def main():
     create_tables()  # Создаем таблицы при старте
+    await set_commands(bot)  # Устанавливаем команды
     await dp.start_polling(bot)
-
 
 if __name__ == '__main__':
     import asyncio
-
     asyncio.run(main())
